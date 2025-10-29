@@ -1,8 +1,9 @@
 import { useRef, useState, useEffect, useMemo } from 'react';
-import { Canvas, useFrame } from '@react-three/fiber';
-import { OrbitControls, Stars } from '@react-three/drei';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
+import { OrbitControls, Stars, Html } from '@react-three/drei';
 import * as THREE from 'three';
 import { useSatelliteData } from '@/hooks/useSatelliteData';
+import * as satellite from 'satellite.js';
 
 // Earth component
 function Earth() {
@@ -28,30 +29,60 @@ function Earth() {
   );
 }
 
-// Satellite component
-function Satellite({ position, velocity }: { position: [number, number, number]; velocity: [number, number, number] }) {
+// Satellite component with realistic orbital propagation
+function Satellite({ 
+  satrec, 
+  name, 
+  onClick 
+}: { 
+  satrec: satellite.SatRec; 
+  name: string;
+  onClick: (name: string, distance: number) => void;
+}) {
   const meshRef = useRef<THREE.Mesh>(null);
-  const [currentPos, setCurrentPos] = useState(position);
+  const startTimeRef = useRef(Date.now());
 
   useFrame(() => {
     if (meshRef.current) {
-      // Simple orbital propagation (simplified for performance)
-      const speed = 0.0001;
-      const [x, y, z] = currentPos;
-      const [vx, vy, vz] = velocity;
+      // Calculate elapsed time (scaled to make visible motion)
+      // 1 second real time = 60 seconds orbital time (60x speed for visibility)
+      const elapsedMs = Date.now() - startTimeRef.current;
+      const simulatedDate = new Date(Date.now() + elapsedMs * 60);
       
-      // Update position based on velocity
-      const newX = x + vx * speed;
-      const newY = y + vy * speed;
-      const newZ = z + vz * speed;
+      // Propagate satellite position using SGP4
+      const positionAndVelocity = satellite.propagate(satrec, simulatedDate);
       
-      setCurrentPos([newX, newY, newZ]);
-      meshRef.current.position.set(newX, newY, newZ);
+      if (positionAndVelocity.position && typeof positionAndVelocity.position !== 'boolean') {
+        const position = positionAndVelocity.position as satellite.EciVec3<number>;
+        
+        // Convert from km to scene units (Earth radius = 1 unit = 6371 km)
+        const earthRadius = 6371;
+        const scale = 1 / earthRadius;
+        
+        const x = position.x * scale;
+        const y = position.y * scale;
+        const z = position.z * scale;
+        
+        meshRef.current.position.set(x, y, z);
+        
+        // Store distance for click handler
+        const distance = Math.sqrt(position.x ** 2 + position.y ** 2 + position.z ** 2);
+        (meshRef.current as any).userData = { name, distance };
+      }
     }
   });
 
   return (
-    <mesh ref={meshRef} position={position}>
+    <mesh 
+      ref={meshRef} 
+      onClick={(e) => {
+        e.stopPropagation();
+        const userData = (e.object as any).userData;
+        if (userData) {
+          onClick(userData.name, userData.distance);
+        }
+      }}
+    >
       <boxGeometry args={[0.02, 0.02, 0.05]} />
       <meshStandardMaterial
         color="#06b6d4"
@@ -142,9 +173,14 @@ function AxesDisplay() {
 }
 
 export function OrbitalViewer() {
-  const { satellites, loading, error } = useSatelliteData();
-  const [showOrbits, setShowOrbits] = useState(true);
-  const [showAxes, setShowAxes] = useState(true);
+  const { satellites, satRecs, loading, error } = useSatelliteData();
+  const [selectedSatellite, setSelectedSatellite] = useState<{ name: string; distance: number } | null>(null);
+
+  const handleSatelliteClick = (name: string, distance: number) => {
+    // Convert distance from km to miles (1 km = 0.621371 miles)
+    const distanceInMiles = distance * 0.621371;
+    setSelectedSatellite({ name, distance: distanceInMiles });
+  };
 
   return (
     <div className="relative w-full h-full">
@@ -157,19 +193,20 @@ export function OrbitalViewer() {
         <pointLight position={[10, 10, 10]} intensity={1} />
         <Stars radius={300} depth={50} count={5000} factor={4} saturation={0} fade speed={1} />
         
-        {showAxes && <AxesDisplay />}
+        <AxesDisplay />
         
         <Earth />
         
-        {satellites.slice(0, 1000).map((sat, index) => (
+        {satRecs.slice(0, 1000).map((sat, index) => (
           <Satellite
             key={index}
-            position={sat.position}
-            velocity={sat.velocity}
+            satrec={sat.satrec}
+            name={sat.name}
+            onClick={handleSatelliteClick}
           />
         ))}
         
-        {showOrbits && satellites.slice(0, 50).map((sat, index) => (
+        {satellites.slice(0, 50).map((sat, index) => (
           <OrbitPath
             key={`orbit-${index}`}
             radius={sat.altitude}
@@ -186,40 +223,45 @@ export function OrbitalViewer() {
         />
       </Canvas>
 
-      {/* Controls Overlay */}
-      <div className="absolute top-4 right-4 flex flex-col gap-2">
-        <button
-          onClick={() => setShowOrbits(!showOrbits)}
-          className="px-4 py-2 bg-card/80 backdrop-blur-sm border border-primary/20 rounded-lg text-sm hover:bg-card transition-colors glow-border"
-        >
-          {showOrbits ? 'Hide Orbits' : 'Show Orbits'}
-        </button>
-        <button
-          onClick={() => setShowAxes(!showAxes)}
-          className="px-4 py-2 bg-card/80 backdrop-blur-sm border border-primary/20 rounded-lg text-sm hover:bg-card transition-colors glow-border"
-        >
-          {showAxes ? 'Hide Axes' : 'Show Axes'}
-        </button>
-      </div>
-
       {/* Loading/Error States */}
       {loading && (
-        <div className="absolute inset-0 flex items-center justify-center bg-background/50 backdrop-blur-sm">
+        <div className="absolute inset-0 flex items-center justify-center bg-background/50 backdrop-blur-sm z-50">
           <div className="text-primary glow-text text-lg">Loading orbital data...</div>
         </div>
       )}
       
       {error && (
-        <div className="absolute top-4 left-4 bg-destructive/20 border border-destructive rounded-lg p-4">
+        <div className="absolute top-4 left-4 bg-destructive/20 border border-destructive rounded-lg p-4 z-50">
           <p className="text-destructive text-sm">{error}</p>
         </div>
       )}
 
+      {/* Satellite Info Panel */}
+      {selectedSatellite && (
+        <div className="absolute bottom-4 left-4 bg-card/90 backdrop-blur-sm border border-primary/20 rounded-lg p-4 glow-border z-50 max-w-sm">
+          <button 
+            onClick={() => setSelectedSatellite(null)}
+            className="absolute top-2 right-2 text-muted-foreground hover:text-primary"
+          >
+            ✕
+          </button>
+          <div className="space-y-2">
+            <h3 className="text-sm font-bold text-primary">{selectedSatellite.name}</h3>
+            <p className="text-xs text-muted-foreground">
+              Distance from Earth Center: <span className="text-primary font-bold">{selectedSatellite.distance.toFixed(2)} miles</span>
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Altitude from Surface: <span className="text-primary font-bold">{(selectedSatellite.distance - 3959).toFixed(2)} miles</span>
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Info Panel */}
-      <div className="absolute bottom-4 left-4 bg-card/80 backdrop-blur-sm border border-primary/20 rounded-lg p-4 glow-border">
+      <div className="absolute bottom-4 right-4 bg-card/80 backdrop-blur-sm border border-primary/20 rounded-lg p-3 glow-border z-40">
         <div className="text-xs space-y-1">
           <p className="text-muted-foreground">Total Objects: <span className="text-primary font-bold">{satellites.length}</span></p>
-          <p className="text-muted-foreground">Displaying: <span className="text-primary font-bold">1000</span></p>
+          <p className="text-muted-foreground">Displaying: <span className="text-primary font-bold">{Math.min(1000, satellites.length)}</span></p>
           <p className="text-muted-foreground">Orbits Shown: <span className="text-primary font-bold">50</span></p>
         </div>
       </div>

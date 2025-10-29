@@ -9,8 +9,14 @@ interface SatelliteData {
   inclination: number;
 }
 
+interface SatRecData {
+  name: string;
+  satrec: satellite.SatRec;
+}
+
 export function useSatelliteData() {
   const [satellites, setSatellites] = useState<SatelliteData[]>([]);
+  const [satRecs, setSatRecs] = useState<SatRecData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -30,6 +36,7 @@ export function useSatelliteData() {
         const lines = text.split('\n');
         
         const satelliteData: SatelliteData[] = [];
+        const satRecData: SatRecData[] = [];
         
         // Parse TLE data (format: name, line1, line2)
         for (let i = 0; i < lines.length - 2; i += 3) {
@@ -43,7 +50,13 @@ export function useSatelliteData() {
             // Parse TLE
             const satrec = satellite.twoline2satrec(tleLine1, tleLine2);
             
-            // Get current position
+            // Store the satrec for real-time propagation
+            satRecData.push({
+              name,
+              satrec
+            });
+            
+            // Get current position for orbit visualization
             const now = new Date();
             const positionAndVelocity = satellite.propagate(satrec, now);
             
@@ -86,6 +99,7 @@ export function useSatelliteData() {
         }
         
         setSatellites(satelliteData);
+        setSatRecs(satRecData);
         setError(null);
       } catch (err) {
         console.error('Error fetching satellite data:', err);
@@ -126,5 +140,5 @@ export function useSatelliteData() {
     fetchTLEData();
   }, []);
 
-  return { satellites, loading, error };
+  return { satellites, satRecs, loading, error };
 }
