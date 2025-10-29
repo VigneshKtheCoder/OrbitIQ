@@ -1,13 +1,48 @@
 import { Activity, Satellite, AlertTriangle, Shield, X } from 'lucide-react';
 import { Card } from '@/components/ui/card';
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 
-export function Dashboard() {
+interface DashboardProps {
+  totalObjects: number;
+  satellitePositions: Array<{ altitude: number }>;
+}
+
+export function Dashboard({ totalObjects, satellitePositions }: DashboardProps) {
   const [selectedStat, setSelectedStat] = useState<string | null>(null);
+  
+  // Calculate real-time statistics from actual satellite data
+  const calculatedStats = useMemo(() => {
+    // Count high-risk objects (altitude < 1.4 Earth radii or ~2,500 km)
+    const highRiskCount = satellitePositions.filter(sat => sat.altitude < 1.4).length;
+    
+    // Calculate collision alerts based on proximity (objects within 0.02 units ~127km)
+    let collisionAlerts = 0;
+    for (let i = 0; i < satellitePositions.length - 1; i++) {
+      for (let j = i + 1; j < Math.min(i + 50, satellitePositions.length); j++) {
+        // Simplified proximity check (would need full position comparison in production)
+        const altDiff = Math.abs(satellitePositions[i].altitude - satellitePositions[j].altitude);
+        if (altDiff < 0.02) collisionAlerts++;
+      }
+    }
+    
+    // Predicted events based on orbital decay (objects below 1.3 Earth radii)
+    const predictedEvents = satellitePositions.filter(sat => sat.altitude < 1.3 || sat.altitude > 2.5).length;
+    
+    // Risk score calculation (0-100 based on density and proximity)
+    const avgRiskFactor = highRiskCount / Math.max(totalObjects, 1);
+    const densityFactor = Math.min(totalObjects / 2000, 1);
+    const riskScore = Math.round(50 + (avgRiskFactor * 30) + (densityFactor * 20));
+    
+    return {
+      collisionAlerts: Math.min(collisionAlerts, 999),
+      predictedEvents,
+      riskScore
+    };
+  }, [satellitePositions, totalObjects]);
   const stats = [
     {
       title: 'Active Objects',
-      value: '36,847',
+      value: totalObjects.toLocaleString(),
       change: '+2.3%',
       icon: Satellite,
       color: 'text-primary',
@@ -20,7 +55,7 @@ export function Dashboard() {
     },
     {
       title: 'Collision Alerts',
-      value: '143',
+      value: calculatedStats.collisionAlerts.toString(),
       change: '-12%',
       icon: AlertTriangle,
       color: 'text-destructive',
@@ -33,7 +68,7 @@ export function Dashboard() {
     },
     {
       title: 'Predicted Events',
-      value: '2,891',
+      value: calculatedStats.predictedEvents.toLocaleString(),
       change: '+8.1%',
       icon: Activity,
       color: 'text-accent',
@@ -46,7 +81,7 @@ export function Dashboard() {
     },
     {
       title: 'Risk Score',
-      value: '67/100',
+      value: `${calculatedStats.riskScore}/100`,
       change: 'Moderate',
       icon: Shield,
       color: 'text-warning-orange',

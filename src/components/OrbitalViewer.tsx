@@ -2,8 +2,27 @@ import { useRef, useState, useEffect, useMemo } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, Stars, Html } from '@react-three/drei';
 import * as THREE from 'three';
-import { useSatelliteData } from '@/hooks/useSatelliteData';
 import * as satellite from 'satellite.js';
+
+interface SatelliteData {
+  name: string;
+  position: [number, number, number];
+  velocity: [number, number, number];
+  altitude: number;
+  inclination: number;
+}
+
+interface SatRecData {
+  name: string;
+  satrec: satellite.SatRec;
+}
+
+interface OrbitalViewerProps {
+  satellites: SatelliteData[];
+  satRecs: SatRecData[];
+  loading: boolean;
+  error: string | null;
+}
 
 // Earth component
 function Earth() {
@@ -172,8 +191,7 @@ function AxesDisplay() {
   );
 }
 
-export function OrbitalViewer() {
-  const { satellites, satRecs, loading, error } = useSatelliteData();
+export function OrbitalViewer({ satellites, satRecs, loading, error }: OrbitalViewerProps) {
   const [selectedSatellite, setSelectedSatellite] = useState<{ name: string; distance: number } | null>(null);
 
   const handleSatelliteClick = (name: string, distance: number) => {

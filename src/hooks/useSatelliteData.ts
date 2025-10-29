@@ -19,9 +19,9 @@ export function useSatelliteData() {
   const [satRecs, setSatRecs] = useState<SatRecData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
 
-  useEffect(() => {
-    async function fetchTLEData() {
+  const fetchTLEData = async () => {
       try {
         setLoading(true);
         
@@ -134,11 +134,17 @@ export function useSatelliteData() {
         setSatellites(mockData);
       } finally {
         setLoading(false);
+        setLastUpdate(new Date());
       }
-    }
+    };
 
+  useEffect(() => {
     fetchTLEData();
   }, []);
 
-  return { satellites, satRecs, loading, error };
+  const refresh = () => {
+    fetchTLEData();
+  };
+
+  return { satellites, satRecs, loading, error, lastUpdate, refresh };
 }
