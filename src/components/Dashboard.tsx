@@ -1,44 +1,61 @@
 import { Activity, Satellite, AlertTriangle, Shield, X } from 'lucide-react';
 import { Card } from '@/components/ui/card';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
+import { detectCollisionRisks, calculateRiskScore, predictOrbitalEvents } from '@/utils/collisionDetection';
 
 interface DashboardProps {
   totalObjects: number;
-  satellitePositions: Array<{ altitude: number }>;
+  satellitePositions: Array<{ 
+    name: string;
+    position: [number, number, number];
+    velocity: [number, number, number];
+    altitude: number;
+  }>;
+  onCriticalAlert?: (message: string) => void;
 }
 
-export function Dashboard({ totalObjects, satellitePositions }: DashboardProps) {
+export function Dashboard({ totalObjects, satellitePositions, onCriticalAlert }: DashboardProps) {
   const [selectedStat, setSelectedStat] = useState<string | null>(null);
+  const [liveStats, setLiveStats] = useState({ collisionAlerts: 0, predictedEvents: 0, riskScore: 0 });
+  const [previousRiskScore, setPreviousRiskScore] = useState(0);
   
-  // Calculate real-time statistics from actual satellite data
-  const calculatedStats = useMemo(() => {
-    // Count high-risk objects (altitude < 1.4 Earth radii or ~2,500 km)
-    const highRiskCount = satellitePositions.filter(sat => sat.altitude < 1.4).length;
-    
-    // Calculate collision alerts based on proximity (objects within 0.02 units ~127km)
-    let collisionAlerts = 0;
-    for (let i = 0; i < satellitePositions.length - 1; i++) {
-      for (let j = i + 1; j < Math.min(i + 50, satellitePositions.length); j++) {
-        // Simplified proximity check (would need full position comparison in production)
-        const altDiff = Math.abs(satellitePositions[i].altitude - satellitePositions[j].altitude);
-        if (altDiff < 0.02) collisionAlerts++;
+  // Calculate real-time statistics from actual satellite data every 5 seconds
+  useEffect(() => {
+    const calculateStats = () => {
+      if (satellitePositions.length === 0) return;
+      
+      // Detect actual collision risks using 3D position data
+      const collisionRisks = detectCollisionRisks(satellitePositions);
+      
+      // Count high-risk conjunctions (>20% collision probability)
+      const collisionAlerts = collisionRisks.filter(r => r.probability > 0.2).length;
+      
+      // Predict orbital events
+      const predictedEvents = predictOrbitalEvents(satellitePositions);
+      
+      // Calculate risk score
+      const riskScore = calculateRiskScore(totalObjects, collisionRisks);
+      
+      // Check for critical alerts (risk score jumped by 15+ points or >3 critical collisions)
+      const criticalCollisions = collisionRisks.filter(r => r.probability > 0.5).length;
+      if ((riskScore - previousRiskScore >= 15 || criticalCollisions >= 3) && onCriticalAlert) {
+        onCriticalAlert(
+          `CRITICAL: ${criticalCollisions} high-probability collision${criticalCollisions !== 1 ? 's' : ''} detected. Risk score: ${riskScore}/100`
+        );
       }
-    }
-    
-    // Predicted events based on orbital decay (objects below 1.3 Earth radii)
-    const predictedEvents = satellitePositions.filter(sat => sat.altitude < 1.3 || sat.altitude > 2.5).length;
-    
-    // Risk score calculation (0-100 based on density and proximity)
-    const avgRiskFactor = highRiskCount / Math.max(totalObjects, 1);
-    const densityFactor = Math.min(totalObjects / 2000, 1);
-    const riskScore = Math.round(50 + (avgRiskFactor * 30) + (densityFactor * 20));
-    
-    return {
-      collisionAlerts: Math.min(collisionAlerts, 999),
-      predictedEvents,
-      riskScore
+      
+      setPreviousRiskScore(riskScore);
+      setLiveStats({ collisionAlerts, predictedEvents, riskScore });
     };
-  }, [satellitePositions, totalObjects]);
+    
+    // Calculate immediately
+    calculateStats();
+    
+    // Update every 5 seconds with real-time data
+    const interval = setInterval(calculateStats, 5000);
+    
+    return () => clearInterval(interval);
+  }, [satellitePositions, totalObjects, previousRiskScore, onCriticalAlert]);
   const stats = [
     {
       title: 'Active Objects',
@@ -55,8 +72,8 @@ export function Dashboard({ totalObjects, satellitePositions }: DashboardProps) 
     },
     {
       title: 'Collision Alerts',
-      value: calculatedStats.collisionAlerts.toString(),
-      change: '-12%',
+      value: liveStats.collisionAlerts.toString(),
+      change: liveStats.collisionAlerts > 10 ? 'HIGH' : 'NORMAL',
       icon: AlertTriangle,
       color: 'text-destructive',
       description: 'The U.S. Space Force\'s 18th Space Defense Squadron tracks close approaches and issues Collision Avoidance (COLA) warnings through Space-Track.org. Currently, 143 high-risk conjunctions are being monitored where satellites pass within 1km of each other with >1% collision probability. These alerts trigger emergency maneuvers to avoid Kessler Syndrome cascades. The recent 12% decrease reflects improved coordination between operators and AI-powered trajectory optimization.',
@@ -68,8 +85,8 @@ export function Dashboard({ totalObjects, satellitePositions }: DashboardProps) 
     },
     {
       title: 'Predicted Events',
-      value: calculatedStats.predictedEvents.toLocaleString(),
-      change: '+8.1%',
+      value: liveStats.predictedEvents.toLocaleString(),
+      change: liveStats.predictedEvents > 50 ? 'ELEVATED' : 'NORMAL',
       icon: Activity,
       color: 'text-accent',
       description: 'Using machine learning models trained on historical TLE data and physics-based SGP4 propagators, our system predicts 2,891 orbital events over the next 30 days. These include satellite reentries, constellation deployments, planned maneuvers, and debris cloud evolution. The 8.1% increase reflects heightened launch cadence from SpaceX, China\'s CASC, and Rocket Lab. Predictive analytics reduce operational costs by 40% through optimized fuel planning and risk-adjusted insurance premiums.',
@@ -81,8 +98,8 @@ export function Dashboard({ totalObjects, satellitePositions }: DashboardProps) 
     },
     {
       title: 'Risk Score',
-      value: `${calculatedStats.riskScore}/100`,
-      change: 'Moderate',
+      value: `${liveStats.riskScore}/100`,
+      change: liveStats.riskScore > 75 ? 'CRITICAL' : liveStats.riskScore > 50 ? 'MODERATE' : 'LOW',
       icon: Shield,
       color: 'text-warning-orange',
       description: 'Our proprietary Orbital Risk Index aggregates collision probability, debris density, orbital decay rates, and geopolitical factors into a 0-100 score. 67/100 indicates moderate risk driven by LEO congestion (550-600km altitude band now exceeds critical density thresholds). Recent anti-satellite weapon tests and uncontrolled reentries contribute to elevated risk. Scores above 75 trigger automatic insurance premium adjustments and mandate enhanced tracking protocols per emerging FCC and ITU regulations.',

@@ -24,27 +24,91 @@ interface OrbitalViewerProps {
   error: string | null;
 }
 
-// Earth component
+// Earth component with realistic continents and oceans
 function Earth() {
   const earthRef = useRef<THREE.Mesh>(null);
+  const cloudsRef = useRef<THREE.Mesh>(null);
   
   useFrame(() => {
     if (earthRef.current) {
-      earthRef.current.rotation.y += 0.0005; // Earth's rotation
+      earthRef.current.rotation.y += 0.0005; // Earth's rotation (real time scaled)
+    }
+    if (cloudsRef.current) {
+      cloudsRef.current.rotation.y += 0.0007; // Clouds rotate slightly faster
     }
   });
 
+  // Create realistic Earth with continents (green) and oceans (blue)
+  const earthTexture = useMemo(() => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 2048;
+    canvas.height = 1024;
+    const ctx = canvas.getContext('2d')!;
+    
+    // Ocean base (blue)
+    ctx.fillStyle = '#0066cc';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    // Simplified continent shapes (green)
+    ctx.fillStyle = '#22aa44';
+    
+    // Africa
+    ctx.beginPath();
+    ctx.ellipse(1100, 500, 200, 280, 0.2, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Europe
+    ctx.fillRect(1050, 280, 150, 100);
+    
+    // Asia
+    ctx.beginPath();
+    ctx.ellipse(1450, 320, 350, 200, 0, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // North America
+    ctx.beginPath();
+    ctx.ellipse(400, 300, 200, 220, 0, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // South America
+    ctx.beginPath();
+    ctx.ellipse(500, 650, 120, 200, 0.3, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Australia
+    ctx.beginPath();
+    ctx.ellipse(1650, 750, 140, 90, 0, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Antarctica
+    ctx.fillRect(0, 900, canvas.width, 124);
+    
+    return new THREE.CanvasTexture(canvas);
+  }, []);
+
   return (
-    <mesh ref={earthRef}>
-      <sphereGeometry args={[1, 64, 64]} />
-      <meshStandardMaterial
-        color="#1e40af"
-        emissive="#1e40af"
-        emissiveIntensity={0.2}
-        roughness={0.8}
-        metalness={0.3}
-      />
-    </mesh>
+    <group>
+      {/* Main Earth sphere */}
+      <mesh ref={earthRef}>
+        <sphereGeometry args={[1, 64, 64]} />
+        <meshStandardMaterial
+          map={earthTexture}
+          roughness={0.9}
+          metalness={0.1}
+        />
+      </mesh>
+      
+      {/* Atmosphere glow */}
+      <mesh scale={1.02}>
+        <sphereGeometry args={[1, 64, 64]} />
+        <meshBasicMaterial
+          color="#4488ff"
+          transparent
+          opacity={0.15}
+          side={THREE.BackSide}
+        />
+      </mesh>
+    </group>
   );
 }
 
