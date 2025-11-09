@@ -1,8 +1,10 @@
 import { useRef, useState, useEffect, useMemo } from 'react';
-import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { OrbitControls, Stars, Html } from '@react-three/drei';
+import { Canvas, useFrame } from '@react-three/fiber';
+import { OrbitControls, Stars } from '@react-three/drei';
 import * as THREE from 'three';
 import * as satellite from 'satellite.js';
+import { DebrisHeatmap } from './DebrisHeatmap';
+import { realSpaceDataService } from '@/services/realSpaceData';
 
 interface SatelliteData {
   name: string;
@@ -257,6 +259,8 @@ function AxesDisplay() {
 
 export function OrbitalViewer({ satellites, satRecs, loading, error }: OrbitalViewerProps) {
   const [selectedSatellite, setSelectedSatellite] = useState<{ name: string; distance: number } | null>(null);
+  const [showHeatmap, setShowHeatmap] = useState(true);
+  const debrisDensity = realSpaceDataService.getDebrisDensityByAltitude();
 
   const handleSatelliteClick = (name: string, distance: number) => {
     // Convert distance from km to miles (1 km = 0.621371 miles)
@@ -278,6 +282,8 @@ export function OrbitalViewer({ satellites, satRecs, loading, error }: OrbitalVi
         <AxesDisplay />
         
         <Earth />
+        
+        {showHeatmap && <DebrisHeatmap densityData={debrisDensity} />}
         
         {satRecs.slice(0, 1000).map((sat, index) => (
           <Satellite
@@ -339,12 +345,18 @@ export function OrbitalViewer({ satellites, satRecs, loading, error }: OrbitalVi
         </div>
       )}
 
-      {/* Info Panel */}
+      {/* Info Panel with Heatmap Toggle */}
       <div className="absolute bottom-4 right-4 bg-card/80 backdrop-blur-sm border border-primary/20 rounded-lg p-3 glow-border z-40">
-        <div className="text-xs space-y-1">
+        <div className="text-xs space-y-2">
           <p className="text-muted-foreground">Total Objects: <span className="text-primary font-bold">{satellites.length}</span></p>
           <p className="text-muted-foreground">Displaying: <span className="text-primary font-bold">{Math.min(1000, satellites.length)}</span></p>
           <p className="text-muted-foreground">Orbits Shown: <span className="text-primary font-bold">50</span></p>
+          <button
+            onClick={() => setShowHeatmap(!showHeatmap)}
+            className="w-full mt-2 px-2 py-1 text-xs bg-primary/10 hover:bg-primary/20 border border-primary/20 rounded text-primary transition-colors"
+          >
+            {showHeatmap ? 'Hide' : 'Show'} Density Heatmap
+          </button>
         </div>
       </div>
     </div>
