@@ -1,0 +1,4 @@
+project_id = "idtekclyaszmwzqpozlz"
+
+[functions.thermal-predict]
+verify_jwt = false
