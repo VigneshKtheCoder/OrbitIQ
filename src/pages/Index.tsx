@@ -2,15 +2,17 @@ import { Header } from '@/components/Header';
 import { Dashboard } from '@/components/Dashboard';
 import { OrbitalViewer } from '@/components/OrbitalViewer';
 import { ThermalRiskModule } from '@/components/ThermalRiskModule';
+import { MissionLifetimeModule } from '@/components/MissionLifetimeModule';
 import { useSatelliteData } from '@/hooks/useSatelliteData';
 import { useState } from 'react';
-import { AlertTriangle, X, Thermometer } from 'lucide-react';
+import { AlertTriangle, X, Thermometer, Rocket } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 const Index = () => {
   const { satellites, satRecs, loading, error, refresh } = useSatelliteData();
   const [criticalAlert, setCriticalAlert] = useState<string | null>(null);
   const [showThermalModule, setShowThermalModule] = useState(false);
+  const [showMissionLifetime, setShowMissionLifetime] = useState(false);
   const [selectedSatelliteForThermal, setSelectedSatelliteForThermal] = useState<{
     position: [number, number, number];
     velocity: [number, number, number];
@@ -76,6 +78,18 @@ const Index = () => {
           />
         )}
 
+        {/* Mission Lifetime Module */}
+        {showMissionLifetime && (
+          <MissionLifetimeModule
+            collisionRisks={[
+              { threatLevel: 'high', missDistance: 0.8, objectName: 'COSMOS 2251 DEB' },
+              { threatLevel: 'medium', missDistance: 2.3, objectName: 'FENGYUN 1C DEB' },
+              { threatLevel: 'low', missDistance: 5.1, objectName: 'CZ-2C R/B' },
+            ]}
+            onClose={() => setShowMissionLifetime(false)}
+          />
+        )}
+
         {/* Status Bar */}
         <div className="absolute top-4 left-4 flex items-center gap-4 text-xs text-muted-foreground bg-card/80 backdrop-blur-sm border border-primary/20 rounded-lg px-3 py-2 glow-border z-40">
           <div className="flex items-center gap-2">
@@ -89,8 +103,8 @@ const Index = () => {
           <span className="text-primary">Updates: 5s</span>
         </div>
 
-        {/* Thermal Analysis Toggle Button */}
-        <div className="absolute top-20 left-4 z-40">
+        {/* Module Toggle Buttons */}
+        <div className="absolute top-20 left-4 z-40 flex flex-col gap-2">
           <Button
             onClick={() => setShowThermalModule(!showThermalModule)}
             variant={showThermalModule ? 'default' : 'outline'}
@@ -99,6 +113,15 @@ const Index = () => {
           >
             <Thermometer className="h-4 w-4" />
             <span>Thermal Analysis</span>
+          </Button>
+          <Button
+            onClick={() => setShowMissionLifetime(!showMissionLifetime)}
+            variant={showMissionLifetime ? 'default' : 'outline'}
+            size="sm"
+            className="flex items-center gap-2"
+          >
+            <Rocket className="h-4 w-4" />
+            <span>Mission Lifetime</span>
           </Button>
         </div>
       </div>
