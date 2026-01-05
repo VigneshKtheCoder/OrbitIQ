@@ -9,7 +9,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Fuel,
   Rocket,
-  Clock,
   AlertTriangle,
   TrendingDown,
   Target,
@@ -18,6 +17,7 @@ import {
   Zap,
   Shield,
   BarChart3,
+  History,
 } from 'lucide-react';
 import {
   SpacecraftPropulsion,
@@ -32,7 +32,22 @@ import {
   formatDeltaV,
   formatLifetime,
   calculateBurnDuration,
+  generateFuelHistory,
+  FuelHistoryEntry,
 } from '@/utils/propulsionPhysics';
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+} from '@/components/ui/chart';
+import {
+  Area,
+  AreaChart,
+  XAxis,
+  YAxis,
+  ReferenceDot,
+  ResponsiveContainer,
+} from 'recharts';
 
 interface MissionLifetimeModuleProps {
   collisionRisks?: Array<{
@@ -49,6 +64,39 @@ export function MissionLifetimeModule({ collisionRisks = [], onClose }: MissionL
   const [selectedManeuver, setSelectedManeuver] = useState<ManeuverPlan | null>(null);
   const [maneuverImpact, setManeuverImpact] = useState<ManeuverImpact | null>(null);
   const [exploredDeltaV, setExploredDeltaV] = useState(0);
+
+  // Generate fuel history data
+  const fuelHistory = useMemo(() => generateFuelHistory(), []);
+  
+  // Format chart data
+  const chartData = useMemo(() => {
+    return fuelHistory.map((entry) => ({
+      date: entry.timestamp.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+      propellant: entry.propellantRemaining,
+      deltaV: entry.cumulativeDeltaV,
+      maneuverType: entry.maneuverType,
+      maneuverName: entry.maneuverName,
+      isManeuver: !!entry.maneuverName,
+    }));
+  }, [fuelHistory]);
+
+  // Get maneuver annotations for the chart
+  const maneuverAnnotations = useMemo(() => {
+    return fuelHistory.filter(entry => entry.maneuverName).map(entry => ({
+      date: entry.timestamp.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+      propellant: entry.propellantRemaining,
+      name: entry.maneuverName!,
+      type: entry.maneuverType!,
+      deltaV: entry.deltaVUsed,
+    }));
+  }, [fuelHistory]);
+
+  const chartConfig = {
+    propellant: {
+      label: "Propellant (kg)",
+      color: "hsl(var(--primary))",
+    },
+  };
 
   // Calculate current mission state
   const missionState = useMemo(() => 
@@ -276,17 +324,126 @@ export function MissionLifetimeModule({ collisionRisks = [], onClose }: MissionL
             </div>
           </div>
 
-          <Tabs defaultValue="maneuvers" className="w-full">
-            <TabsList className="w-full grid grid-cols-2">
+          <Tabs defaultValue="history" className="w-full">
+            <TabsList className="w-full grid grid-cols-3">
+              <TabsTrigger value="history" className="text-xs">
+                <History className="h-3 w-3 mr-1" />
+                Fuel History
+              </TabsTrigger>
               <TabsTrigger value="maneuvers" className="text-xs">
                 <Target className="h-3 w-3 mr-1" />
-                Proposed Maneuvers
+                Maneuvers
               </TabsTrigger>
               <TabsTrigger value="analysis" className="text-xs">
                 <BarChart3 className="h-3 w-3 mr-1" />
-                Impact Analysis
+                Analysis
               </TabsTrigger>
             </TabsList>
+
+            <TabsContent value="history" className="mt-3">
+              <div className="space-y-3">
+                <div className="text-xs text-muted-foreground mb-2">
+                  Propellant usage over mission timeline with maneuver annotations
+                </div>
+                <ChartContainer config={chartConfig} className="h-[180px] w-full">
+                  <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="propellantGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="hsl(var(--primary))" stopOpacity={0.4} />
+                        <stop offset="95%" stopColor="hsl(var(--primary))" stopOpacity={0.05} />
+                      </linearGradient>
+                    </defs>
+                    <XAxis 
+                      dataKey="date" 
+                      tick={{ fontSize: 9 }} 
+                      tickLine={false}
+                      axisLine={false}
+                      interval={6}
+                    />
+                    <YAxis 
+                      tick={{ fontSize: 9 }} 
+                      tickLine={false}
+                      axisLine={false}
+                      domain={[100, 155]}
+                      tickFormatter={(v) => `${v}kg`}
+                    />
+                    <ChartTooltip 
+                      content={({ active, payload }) => {
+                        if (active && payload && payload.length) {
+                          const data = payload[0].payload;
+                          return (
+                            <div className="bg-card/95 backdrop-blur-sm border border-border rounded-lg p-2 shadow-lg">
+                              <p className="text-xs font-medium">{data.date}</p>
+                              <p className="text-xs text-cyan-400">
+                                Propellant: {data.propellant.toFixed(2)} kg
+                              </p>
+                              <p className="text-xs text-yellow-400">
+                                Cumulative Δv: {data.deltaV.toFixed(2)} m/s
+                              </p>
+                              {data.maneuverName && (
+                                <div className="mt-1 pt-1 border-t border-border/50">
+                                  <p className="text-xs text-orange-400 font-medium">
+                                    📍 {data.maneuverName}
+                                  </p>
+                                  <p className="text-[10px] text-muted-foreground capitalize">
+                                    {data.maneuverType?.replace('_', ' ')}
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        }
+                        return null;
+                      }}
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="propellant"
+                      stroke="hsl(var(--primary))"
+                      strokeWidth={2}
+                      fill="url(#propellantGradient)"
+                    />
+                    {/* Maneuver annotations */}
+                    {maneuverAnnotations.map((m, i) => (
+                      <ReferenceDot
+                        key={i}
+                        x={m.date}
+                        y={m.propellant}
+                        r={4}
+                        fill={
+                          m.type === 'collision_avoidance' ? '#f97316' :
+                          m.type === 'station_keeping' ? '#22c55e' :
+                          m.type === 'orbit_raise' ? '#8b5cf6' :
+                          '#eab308'
+                        }
+                        stroke="#fff"
+                        strokeWidth={1}
+                      />
+                    ))}
+                  </AreaChart>
+                </ChartContainer>
+                
+                {/* Legend */}
+                <div className="flex flex-wrap gap-3 text-[10px]">
+                  <div className="flex items-center gap-1">
+                    <div className="w-2 h-2 rounded-full bg-orange-500" />
+                    <span className="text-muted-foreground">Collision Avoidance</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <div className="w-2 h-2 rounded-full bg-green-500" />
+                    <span className="text-muted-foreground">Station Keeping</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <div className="w-2 h-2 rounded-full bg-purple-500" />
+                    <span className="text-muted-foreground">Orbit Raise</span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <div className="w-2 h-2 rounded-full bg-yellow-500" />
+                    <span className="text-muted-foreground">Attitude Correction</span>
+                  </div>
+                </div>
+              </div>
+            </TabsContent>
             
             <TabsContent value="maneuvers" className="mt-3">
               <ScrollArea className="h-48">

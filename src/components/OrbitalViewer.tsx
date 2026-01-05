@@ -114,21 +114,27 @@ function Earth() {
   );
 }
 
-// Satellite component with realistic orbital propagation
+// Satellite component with realistic orbital propagation and hover effects
 function Satellite({ 
   satrec, 
   name, 
-  onClick 
+  onClick,
+  onHover,
+  onHoverEnd,
+  isHovered
 }: { 
   satrec: satellite.SatRec; 
   name: string;
   onClick: (name: string, distance: number) => void;
+  onHover: (name: string) => void;
+  onHoverEnd: () => void;
+  isHovered: boolean;
 }) {
-  const meshRef = useRef<THREE.Mesh>(null);
+  const groupRef = useRef<THREE.Group>(null);
   const startTimeRef = useRef(Date.now());
 
   useFrame(() => {
-    if (meshRef.current) {
+    if (groupRef.current) {
       // Calculate elapsed time (scaled to make visible motion)
       // 1 second real time = 60 seconds orbital time (60x speed for visibility)
       const elapsedMs = Date.now() - startTimeRef.current;
@@ -148,33 +154,81 @@ function Satellite({
         const y = position.y * scale;
         const z = position.z * scale;
         
-        meshRef.current.position.set(x, y, z);
+        groupRef.current.position.set(x, y, z);
         
         // Store distance for click handler
         const distance = Math.sqrt(position.x ** 2 + position.y ** 2 + position.z ** 2);
-        (meshRef.current as any).userData = { name, distance };
+        (groupRef.current as any).userData = { name, distance };
       }
     }
   });
 
   return (
-    <mesh 
-      ref={meshRef} 
+    <group 
+      ref={groupRef}
       onClick={(e) => {
         e.stopPropagation();
-        const userData = (e.object as any).userData;
+        const userData = (groupRef.current as any)?.userData;
         if (userData) {
           onClick(userData.name, userData.distance);
         }
       }}
+      onPointerOver={(e) => {
+        e.stopPropagation();
+        onHover(name);
+        document.body.style.cursor = 'pointer';
+      }}
+      onPointerOut={() => {
+        onHoverEnd();
+        document.body.style.cursor = 'auto';
+      }}
     >
-      <boxGeometry args={[0.02, 0.02, 0.05]} />
-      <meshStandardMaterial
-        color="#06b6d4"
-        emissive="#06b6d4"
-        emissiveIntensity={0.5}
-      />
-    </mesh>
+      {/* Hover ring indicator */}
+      {isHovered && (
+        <mesh rotation={[Math.PI / 2, 0, 0]}>
+          <ringGeometry args={[0.04, 0.055, 32]} />
+          <meshBasicMaterial 
+            color="#fbbf24" 
+            transparent 
+            opacity={0.9}
+            side={THREE.DoubleSide}
+          />
+        </mesh>
+      )}
+      
+      {/* Main satellite body - bright and glowing */}
+      <mesh>
+        <octahedronGeometry args={[0.015, 0]} />
+        <meshStandardMaterial
+          color="#ffffff"
+          emissive={isHovered ? "#fbbf24" : "#06b6d4"}
+          emissiveIntensity={isHovered ? 2 : 1.5}
+        />
+      </mesh>
+      
+      {/* Solar panels */}
+      <mesh position={[0.025, 0, 0]}>
+        <boxGeometry args={[0.03, 0.002, 0.015]} />
+        <meshStandardMaterial
+          color="#1e40af"
+          emissive="#3b82f6"
+          emissiveIntensity={0.8}
+        />
+      </mesh>
+      <mesh position={[-0.025, 0, 0]}>
+        <boxGeometry args={[0.03, 0.002, 0.015]} />
+        <meshStandardMaterial
+          color="#1e40af"
+          emissive="#3b82f6"
+          emissiveIntensity={0.8}
+        />
+      </mesh>
+      
+      {/* Glow effect - point light on hover */}
+      {isHovered && (
+        <pointLight color="#fbbf24" intensity={0.5} distance={0.3} />
+      )}
+    </group>
   );
 }
 
@@ -259,6 +313,7 @@ function AxesDisplay() {
 
 export function OrbitalViewer({ satellites, satRecs, loading, error }: OrbitalViewerProps) {
   const [selectedSatellite, setSelectedSatellite] = useState<{ name: string; distance: number } | null>(null);
+  const [hoveredSatellite, setHoveredSatellite] = useState<string | null>(null);
   const [showHeatmap, setShowHeatmap] = useState(true);
   const debrisDensity = realSpaceDataService.getDebrisDensityByAltitude();
 
@@ -266,6 +321,14 @@ export function OrbitalViewer({ satellites, satRecs, loading, error }: OrbitalVi
     // Convert distance from km to miles (1 km = 0.621371 miles)
     const distanceInMiles = distance * 0.621371;
     setSelectedSatellite({ name, distance: distanceInMiles });
+  };
+
+  const handleSatelliteHover = (name: string) => {
+    setHoveredSatellite(name);
+  };
+
+  const handleSatelliteHoverEnd = () => {
+    setHoveredSatellite(null);
   };
 
   return (
@@ -291,6 +354,9 @@ export function OrbitalViewer({ satellites, satRecs, loading, error }: OrbitalVi
             satrec={sat.satrec}
             name={sat.name}
             onClick={handleSatelliteClick}
+            onHover={handleSatelliteHover}
+            onHoverEnd={handleSatelliteHoverEnd}
+            isHovered={hoveredSatellite === sat.name}
           />
         ))}
         
@@ -321,6 +387,16 @@ export function OrbitalViewer({ satellites, satRecs, loading, error }: OrbitalVi
       {error && (
         <div className="absolute top-4 left-4 bg-destructive/20 border border-destructive rounded-lg p-4 z-50">
           <p className="text-destructive text-sm">{error}</p>
+        </div>
+      )}
+
+      {/* Hover Tooltip */}
+      {hoveredSatellite && !selectedSatellite && (
+        <div className="absolute top-16 left-1/2 transform -translate-x-1/2 bg-card/95 backdrop-blur-sm border border-yellow-400/50 rounded-lg px-3 py-2 z-50 pointer-events-none shadow-lg shadow-yellow-500/20">
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse" />
+            <span className="text-sm font-medium text-yellow-400">{hoveredSatellite}</span>
+          </div>
         </div>
       )}
 

@@ -52,6 +52,73 @@ export interface AlternativeStrategy {
   tradeoff: string;
 }
 
+export interface FuelHistoryEntry {
+  timestamp: Date;
+  propellantRemaining: number;
+  deltaVUsed: number;
+  cumulativeDeltaV: number;
+  maneuverType?: 'collision_avoidance' | 'station_keeping' | 'orbit_raise' | 'deorbit' | 'attitude_correction';
+  maneuverName?: string;
+}
+
+// Generate simulated fuel consumption history
+export function generateFuelHistory(): FuelHistoryEntry[] {
+  const history: FuelHistoryEntry[] = [];
+  const startDate = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000); // 1 year ago
+  let propellantRemaining = 150; // Initial propellant
+  let cumulativeDeltaV = 0;
+  
+  // Maneuver events for annotation
+  const maneuverEvents = [
+    { dayOffset: 15, type: 'station_keeping' as const, name: 'SK-001', deltaV: 2.1 },
+    { dayOffset: 45, type: 'collision_avoidance' as const, name: 'CAM-001', deltaV: 0.8 },
+    { dayOffset: 90, type: 'station_keeping' as const, name: 'SK-002', deltaV: 2.3 },
+    { dayOffset: 125, type: 'orbit_raise' as const, name: 'OR-001', deltaV: 4.5 },
+    { dayOffset: 180, type: 'station_keeping' as const, name: 'SK-003', deltaV: 2.0 },
+    { dayOffset: 210, type: 'collision_avoidance' as const, name: 'CAM-002', deltaV: 1.2 },
+    { dayOffset: 245, type: 'attitude_correction' as const, name: 'AC-001', deltaV: 0.3 },
+    { dayOffset: 275, type: 'station_keeping' as const, name: 'SK-004', deltaV: 2.2 },
+    { dayOffset: 320, type: 'collision_avoidance' as const, name: 'CAM-003', deltaV: 0.9 },
+    { dayOffset: 350, type: 'station_keeping' as const, name: 'SK-005', deltaV: 2.1 },
+  ];
+  
+  // Generate daily data points
+  for (let day = 0; day <= 365; day += 7) {
+    const timestamp = new Date(startDate.getTime() + day * 24 * 60 * 60 * 1000);
+    
+    // Check for maneuver on this day
+    const maneuver = maneuverEvents.find(m => Math.abs(m.dayOffset - day) < 4);
+    
+    if (maneuver) {
+      // Apply maneuver
+      const propUsed = (maneuver.deltaV / 150) * propellantRemaining * 0.8; // Simplified calculation
+      propellantRemaining -= propUsed;
+      cumulativeDeltaV += maneuver.deltaV;
+      
+      history.push({
+        timestamp,
+        propellantRemaining,
+        deltaVUsed: maneuver.deltaV,
+        cumulativeDeltaV,
+        maneuverType: maneuver.type,
+        maneuverName: maneuver.name,
+      });
+    } else {
+      // Small passive consumption (attitude maintenance, etc.)
+      propellantRemaining -= 0.02;
+      
+      history.push({
+        timestamp,
+        propellantRemaining,
+        deltaVUsed: 0,
+        cumulativeDeltaV,
+      });
+    }
+  }
+  
+  return history;
+}
+
 // Physical constants
 const G0 = 9.80665; // m/s² - standard gravity
 
